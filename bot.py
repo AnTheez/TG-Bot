@@ -11,22 +11,34 @@ from config.token_reader import get_bot_token
 # Retrieve the Telegram bot token from the token.txt file
 TOKEN = get_bot_token()
 
-# Establish a database connection using the function from database_config.py
-db_connection = get_database_connection()
-
 # Initialize a dictionary to store user quiz data
 user_quiz_data = {}
 
 # Start command handler
 
 
+def get_db_cursor():
+    db_connection = get_database_connection()
+    cursor = db_connection.cursor(dictionary=True)
+    return db_connection, cursor
+
+
 def start(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
 
-    # Fetch quiz questions from the database
-    cursor = db_connection.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM quiz_questions")
-    quiz_questions = cursor.fetchall()
+    # Establish a new connection and fetch quiz questions from the database
+    try:
+        db_connection, cursor = get_db_cursor()
+        cursor.execute("SELECT * FROM quiz_questions")
+        quiz_questions = cursor.fetchall()
+    except mysql.connector.Error as err:
+        print("Error fetching quiz questions:", err)
+        context.bot.send_message(
+            chat_id=update.effective_chat.id, text="Error fetching quiz questions.")
+        return
+    finally:
+        cursor.close()
+        db_connection.close()
 
     if not quiz_questions:
         context.bot.send_message(
@@ -43,6 +55,7 @@ def start(update: Update, context: CallbackContext):
 
     # Send the first quiz question
     send_next_question(update, context)
+
 
 # Function to send the next quiz question
 
@@ -75,37 +88,8 @@ def send_next_question(update: Update, context: CallbackContext):
 
 
 def handle_poll_answer(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    user_data = user_quiz_data.get(user_id)
-
-    if user_data and user_data["remaining_questions"]:
-        # Get the data for the next question
-        # Do not pop the question yet
-        question_data = user_data["remaining_questions"][0]
-
-        # Send the explanation for the previous question
-        context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"Explanation: {question_data['explanation']}"
-        )
-
-        # Now send the next question
-        send_next_question(update, context)
-    else:
-        # Send the explanation for the last question
-        if user_data:
-            last_question_data = user_data["remaining_questions"].pop()
-            context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"Explanation: {last_question_data['explanation']}"
-            )
-
-        # Notify the user that the quiz is complete
-        context.bot.send_message(
-            chat_id=update.effective_chat.id, text="Quiz complete!"
-        )
-        del user_quiz_data[user_id]  # Remove user data after quiz completion
-
+    # Send the next question whenever a poll answer is received
+    send_next_question(update, context)
 
 # Set up the Telegram bot and handlers
 

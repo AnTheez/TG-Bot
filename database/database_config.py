@@ -4,10 +4,10 @@ import mysql.connector
 def get_database_connection():
     # Define your database connection parameters here
     db_config = {
-        'host': "srv509.hstgr.io",
-        'user': "u450827651_bot",
-        'password': "Riniko123",
-        'database': "u450827651_bot"
+        'host': "127.0.0.1",
+        'user': "root",
+        'password': "",
+        'database': "bot"
     }
 
     try:
