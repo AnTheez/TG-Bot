@@ -1,6 +1,8 @@
 import os
 import random
 import mysql.connector
+import time
+
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, CallbackContext, PollAnswerHandler
 
@@ -42,20 +44,48 @@ def start(update: Update, context: CallbackContext):
 
     if not quiz_questions:
         context.bot.send_message(
-            chat_id=update.effective_chat.id, text="No quiz questions available.")
+            chat_id=update.effective_chat.id, text="No content available.")
         return
 
-    # Shuffle the quiz questions
-    random.shuffle(quiz_questions)
+    # Send the first lesson material to the user (bold) if available
+    lesson_material_1 = quiz_questions[0].get("material", "")
+    if lesson_material_1:
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"*{escape_markdown_v2(lesson_material_1)}*",
+            parse_mode='MarkdownV2')
+        # Wait for 5 seconds before sending the next material (if exists)
+        time.sleep(5)
 
-    # Store the shuffled questions for later use
-    user_quiz_data[user_id] = {
-        "remaining_questions": quiz_questions,
-    }
+    # Send the second lesson material to the user (italic) if available
+    lesson_material_2 = quiz_questions[0].get("material_2", "")
+    if lesson_material_2:
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"_{escape_markdown_v2(lesson_material_2)}_",
+            parse_mode='MarkdownV2')
+        # Wait for 10 seconds before sending the quiz (if exists)
+        time.sleep(10)
 
-    # Send the first quiz question
-    send_next_question(update, context)
+    # Shuffle the quiz questions and send the first one if they exist
+    if quiz_questions:
+        random.shuffle(quiz_questions)
+        user_quiz_data[user_id] = {
+            "remaining_questions": quiz_questions,
+        }
+        send_next_question(update, context)
+    else:
+        context.bot.send_message(
+            chat_id=update.effective_chat.id, text="Thank you for using the bot. No quiz available.")
 
+
+def escape_markdown_v2(text: str) -> str:
+    """Escape special characters for MarkdownV2."""
+    characters_to_escape = [
+        '.', '!', '-', '(', ')', '~', '>', '#', '+', '[', ']', '{', '}', '|', '*', '_', '&', '`']
+    for char in characters_to_escape:
+        text = text.replace(char, f'\\{char}')
+    return text
 
 # Function to send the next quiz question
 
@@ -66,16 +96,26 @@ def send_next_question(update: Update, context: CallbackContext):
 
     if user_data and user_data["remaining_questions"]:
         question_data = user_data["remaining_questions"].pop(0)
-        options = [question_data["option1"], question_data["option2"],
-                   question_data["option3"], question_data["option4"]]
+
+        # Collect all options that are not None or empty
+        options = [option for option in [question_data["option1"], question_data["option2"],
+                                         question_data["option3"], question_data["option4"]] if option]
+
+        # Ensure there are at least 2 options
+        if len(options) < 2:
+            context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="Error: Not enough options for the question."
+            )
+            return
+
         context.bot.send_poll(
             chat_id=update.effective_chat.id,
             question=question_data["question"],
             options=options,
-            # Assuming correct_option is 1-indexed
-            correct_option_id=question_data["correct_option"] - 1,
+            correct_option_id=options.index(
+                question_data[f"option{question_data['correct_option']}"]),
             type='quiz',
-            # Assuming 'explanation' column exists in your DB
             explanation=question_data.get("explanation", "")
         )
     else:
@@ -83,6 +123,7 @@ def send_next_question(update: Update, context: CallbackContext):
             chat_id=update.effective_chat.id, text="Quiz complete!"
         )
         del user_quiz_data[user_id]  # Remove user data after quiz completion
+
 
 # Poll answer handler
 
